@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nitel // security feed</title>
+<meta name="color-scheme" content="dark">
+<style>
+:root{--bg:#0a0f0a;--fg:#b8e6c4;--hi:#4af08a;--dim:#5d7f6a;--line:#1c2b20}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;max-width:760px;margin:0 auto;padding:24px 16px 64px}
+header{border-bottom:1px solid var(--line);padding-bottom:14px;margin-bottom:8px}
+h1{color:var(--hi);font-size:1.05rem;letter-spacing:1px}
+h1 .cursor{animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+#sync{color:var(--dim);font-size:.75rem;margin-top:4px}
+#status{font-size:.8rem;min-height:1.2em;margin:8px 0}
+#status.wait{color:var(--hi)}
+#status.error{color:#ff7b72}
+article{padding:14px 0;border-bottom:1px solid var(--line)}
+.meta{color:var(--dim);font-size:.72rem;letter-spacing:.5px;display:flex;gap:10px;flex-wrap:wrap}
+.meta .cat{color:var(--hi);border:1px solid var(--line);padding:0 6px;border-radius:2px}
+h2{font-size:.95rem;margin:4px 0}
+h2 a{color:var(--fg);text-decoration:none}
+h2 a:hover,h2 a:focus{color:var(--hi);text-decoration:underline}
+p{color:var(--dim);font-size:.82rem}
+footer{margin-top:24px;color:var(--dim);font-size:.72rem}
+footer a{color:var(--dim)}
+</style>
+</head>
+<body>
+<header>
+<h1>nitel@bleep:~$ tail -f /var/log/world <span class="cursor">&#9608;</span></h1>
+<div id="sync">syncing&hellip;</div>
+</header>
+<div id="status"></div>
+<main id="feed"><!--NEWS--></main>
+<script id="news-data" type="application/json">"__NEWS__"</script>
+<footer>source: <a href="https://www.bleepingcomputer.com/" rel="noopener noreferrer">BleepingComputer</a> &middot; auto-sync every 12h</footer>
+<script>
+const feed=document.getElementById('feed'),status=document.getElementById('status'),sync=document.getElementById('sync');
+function ago(iso){const t=Date.parse(iso);if(isNaN(t))return'';const s=(Date.now()-t)/1e3;
+const u=[[31536000,'y'],[2592000,'mo'],[604800,'w'],[86400,'d'],[3600,'h'],[60,'m']];
+for(const[n,l]of u)if(s>=n)return(s/n|0)+l+' ago';return'just now';}
+function esc(s){const d=document.createElement('template');d.textContent=s||'';return d.innerHTML;}
+function render(data){
+  sync.textContent='last sync: '+new Date(data.updated_at).toUTCString()+' (server)';
+  feed.innerHTML=data.items.map(it=>
+    '<article>'+
+    '<div class="meta"><span>'+esc(ago(it.published))+'</span>'+
+    (it.author?'<span>'+esc(it.author)+'</span>':'')+
+    (it.category?'<span class="cat">'+esc(it.category)+'</span>':'')+
+    '</div>'+
+    '<h2><a href="'+esc(it.link)+'" target="_blank" rel="noopener noreferrer">'+esc(it.title)+'</a></h2>'+
+    '<p>'+esc(it.summary)+'</p></article>').join('');
+}
+let haveData=false,retries=0;
+const embedded=(()=>{try{return JSON.parse(document.getElementById('news-data').textContent)}catch(e){return null}})();
+function st(msg,cls){status.textContent=msg||'';status.className=cls||'';}
+async function load(silent){
+  try{
+    const r=await fetch('/api/news');
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    render(await r.json());
+    haveData=true;retries=0;st('');
+  }catch(e){
+    const delay=haveData?5*60*1000:30*1000;
+    st('[!] '+e.message+' \u2014 '+
+      (haveData?'showing cached news, retrying in 5 min':'sync failed, retrying in 30s (attempt '+(++retries)+')'),
+      haveData?'':'error');
+    if(!haveData)setTimeout(()=>load(silent),delay);
+  }
+}
+if(document.getElementById('feed').children.length){
+  haveData=true;
+}else if(embedded&&embedded.items&&embedded.items.length){
+  render(embedded);
+  haveData=true;
+}else{
+  st('[*] syncing\u2026','wait');
+  load(false);
+}
+setInterval(()=>load(true),5*60*1000);
+</script>
+</body>
+</html>
